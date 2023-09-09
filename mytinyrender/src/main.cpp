@@ -40,30 +40,48 @@ void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color)
 	}
 }
 
-void triangle(Vec2i t0, Vec2i t1, Vec2i t2, TGAImage& image, TGAColor color) {
-	std::vector<Vec2i> points{ t0,t1,t2 };
-	std::sort(points.begin(), points.end(),
-		[](Vec2i& p1, Vec2i& p2)->bool {return p1.y < p2.y; }
-	);
-	t0 = points[0]; t1 = points[1]; t2 = points[2];
-	// draw the lower half of the triangle
-	int total_height = t2.y - t0.y;
-	for (int y = t0.y; y <= t1.y; y++) {
-		int segment_height = t1.y - t0.y + 1;
-		float alpha = (float)(y - t0.y) / total_height;
-		float beta = (float)(y - t0.y) / segment_height; // be careful with divisions by zero 
-		Vec2i A = t0 + (t2 - t0) * alpha;
-		Vec2i B = t0 + (t1 - t0) * beta;
-		line(A.x, y, B.x, y, image, color);
+Vec3f barycentric(std::vector<Vec2i>& pts, Vec2i p) {
+	Vec3f x{ (float)(pts[1] - pts[0]).x, (float)(pts[2] - pts[0]).x, (float)(pts[0] - p).x };
+	Vec3f y{ (float)(pts[1] - pts[0]).y, (float)(pts[2] - pts[0]).y, (float)(pts[0] - p).y };
+	Vec3f temp = x ^ y; // result = k[u, v, 1];
+	if (std::abs(temp.z) < 1) { // which means temp.z is zero
+		// in this case the triangle is degenerate to a line
+		// we will assume the point p is not in the triangle
+		// so return any Vec3f that has a negative value in it
+		return Vec3f(-1, 1, 1);
 	}
-	// draw the upper half of the triangle
-	for (int y = t1.y; y <= t2.y; y++) {
-		int segment_height = t2.y - t1.y + 1;
-		float alpha = (float)(y - t0.y) / total_height;
-		float beta = (float)(y - t1.y) / segment_height; // be careful with divisions by zero 
-		Vec2i A = t2 + (t0 - t2) * (1 - alpha);
-		Vec2i B = t2 + (t1 - t2) * (1 - beta);
-		line(A.x, y, B.x, y, image, color);
+	// the return value should be [1-u-v, u, v]
+	float u = temp.x / temp.z;
+	float v = temp.y / temp.z;
+	Vec3f a = Vec3f{ 1.f - u - v,u,v };
+	Vec3f b = Vec3f(1.f - (temp.x + temp.y) / temp.z, temp.x / temp.z, temp.y / temp.z);
+	// theoretically a and b should be the same, however in some cases there will be a difference
+	// between a value that is close to zero(but it is negative) and a value that is zero
+	// which will create holes when filling the triangle
+	return b;
+}
+
+void triangle(std::vector<Vec2i>& pts, TGAImage& image, TGAColor color) {
+	Vec2i bboxmin = Vec2i(image.get_width() - 1, image.get_height() - 1);
+	Vec2i bboxmax = Vec2i(0, 0);
+	Vec2i clamp = bboxmin;
+	for (int i = 0; i < 3; i++) {
+		// the outer std::max and std::min ignore the bounding box outside the screen
+		bboxmin.x = std::max(0, std::min(bboxmin.x, pts[i].x));
+		bboxmin.y = std::max(0, std::min(bboxmin.y, pts[i].y));
+
+		bboxmax.x = std::min(clamp.x, std::max(bboxmax.x, pts[i].x));
+		bboxmax.y = std::min(clamp.y, std::max(bboxmax.y, pts[i].y));
+	}
+	Vec2i p;
+	for (p.x = bboxmin.x; p.x <= bboxmax.x; p.x++) {
+		for (p.y = bboxmin.y; p.y <= bboxmax.y; p.y++) {
+			Vec3f bc_screen = barycentric(pts, p);
+			if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0) {
+				continue;
+			}
+			image.set(p.x, p.y, color);
+		}
 	}
 }
 
