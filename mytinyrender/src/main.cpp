@@ -12,6 +12,7 @@ const std::string DEFAULT_OBJ_PATH = std::string("obj/african_head/african_head.
 const int IMG_WIDTH = 1200;
 const int IMG_HEIGHT = 1200;
 Vec3f light_dir = { 0,0,-1 };
+std::unique_ptr<std::vector<float>> z_buffer;
 
 void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color) {
 	// TODO: forget about optimization for now 
@@ -42,10 +43,14 @@ void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color)
 	}
 }
 
-Vec3f barycentric(std::vector<Vec2i>& pts, Vec2i p) {
+Vec3f world2screen(Vec3f v) {
+	return Vec3f((v.x + 1.f) * IMG_WIDTH / 2.f, (v.y + 1.f) * IMG_HEIGHT / 2.f, v.z);
+}
+
+Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
 	Vec3f x{ (float)(pts[1] - pts[0]).x, (float)(pts[2] - pts[0]).x, (float)(pts[0] - p).x };
 	Vec3f y{ (float)(pts[1] - pts[0]).y, (float)(pts[2] - pts[0]).y, (float)(pts[0] - p).y };
-	Vec3f temp = x ^ y; // result = k[u, v, 1];
+	Vec3f temp = cross(x,y); // result = k[u, v, 1];
 	if (std::abs(temp.z) < 1) { // which means temp.z is zero
 		// in this case the triangle is degenerate to a line
 		// we will assume the point p is not in the triangle
@@ -63,14 +68,14 @@ Vec3f barycentric(std::vector<Vec2i>& pts, Vec2i p) {
 	return b;
 }
 
-void triangle(std::vector<Vec2i>& pts, TGAImage& image, TGAColor color) {
-	Vec2i bboxmin = Vec2i(image.get_width() - 1, image.get_height() - 1);
-	Vec2i bboxmax = Vec2i(0, 0);
-	Vec2i clamp = bboxmin;
+void triangle(std::vector<Vec3f>& pts, TGAImage& image, TGAColor color) {
+	Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+	Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
+	Vec2f clamp = bboxmin;
 	for (int i = 0; i < 3; i++) {
 		// the outer std::max and std::min ignore the bounding box outside the screen
-		bboxmin.x = std::max(0, std::min(bboxmin.x, pts[i].x));
-		bboxmin.y = std::max(0, std::min(bboxmin.y, pts[i].y));
+		bboxmin.x = std::max(0.f, std::min(bboxmin.x, pts[i].x));
+		bboxmin.y = std::max(0.f, std::min(bboxmin.y, pts[i].y));
 
 		bboxmax.x = std::min(clamp.x, std::max(bboxmax.x, pts[i].x));
 		bboxmax.y = std::min(clamp.y, std::max(bboxmax.y, pts[i].y));
@@ -78,11 +83,19 @@ void triangle(std::vector<Vec2i>& pts, TGAImage& image, TGAColor color) {
 	Vec2i p;
 	for (p.x = bboxmin.x; p.x <= bboxmax.x; p.x++) {
 		for (p.y = bboxmin.y; p.y <= bboxmax.y; p.y++) {
-			Vec3f bc_screen = barycentric(pts, p);
+			Vec3f bc_screen = barycentric(pts, Vec3f(p.x, p.y, 0));
 			if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0) {
 				continue;
 			}
-			image.set(p.x, p.y, color);
+			float p_z = 0.f;
+			// interpolate the z value
+			for (int i = 0; i < 3; i++) {
+				p_z += pts[i].z * bc_screen[i];
+			}
+			if ((*z_buffer)[int(p.x + p.y * IMG_WIDTH)] < p_z) {
+				(*z_buffer)[int(p.x + p.y * IMG_WIDTH)] = p_z;
+				image.set(p.x, p.y, color);
+			}
 		}
 	}
 }
@@ -97,23 +110,21 @@ int main(int argc, char** argv)
 		model = std::make_unique<Model>(DEFAULT_OBJ_PATH.c_str());
 	}
 	TGAImage image{ IMG_WIDTH,IMG_HEIGHT,TGAImage::RGB };
+	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::min());
 
 	for (int i = 1; i < model->nfaces(); i++) {
 		auto face = model->face(i);
-		std::vector<Vec2i> screen_coords(3);
+		std::vector<Vec3f> screen_coords(3);
 		std::vector<Vec3f> world_coords(3);
 		for (int j = 0; j < 3; j++) {
 			world_coords[j] = model->vert(face[j]);
-			screen_coords[j] =
-				Vec2i((world_coords[j].x + 1.0) * IMG_WIDTH / 2.0
-					, (world_coords[j].y + 1.0) * IMG_HEIGHT / 2.0);
+			screen_coords[j] = world2screen(model->vert(face[j]));
 		}
-		Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
+		Vec3f n = cross((world_coords[2] - world_coords[0]), (world_coords[1] - world_coords[0]));
 		n.normalize();
 		float intensity = (n * light_dir);
 		if (intensity > 0) {
-			std::vector<Vec2i> pts = { screen_coords[0], screen_coords[1], screen_coords[2] };
-			triangle(pts, image
+			triangle(screen_coords, image
 				, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
 		}
 	}
