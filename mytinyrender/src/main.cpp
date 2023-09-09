@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <algorithm>
+#include <assert.h>
 const TGAColor white = TGAColor{ 255, 255, 255, 255 };
 const TGAColor red = TGAColor{ 255,0,0,255 };
 const TGAColor green = TGAColor{ 0,255,0,255 };
@@ -10,6 +11,7 @@ const TGAColor blue = TGAColor{ 0,0,255,255 };
 const std::string DEFAULT_OBJ_PATH = std::string("obj/african_head/african_head.obj");
 const int IMG_WIDTH = 1200;
 const int IMG_HEIGHT = 1200;
+Vec3f light_dir = { 0,0,-1 };
 
 void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color) {
 	// TODO: forget about optimization for now 
@@ -98,18 +100,23 @@ int main(int argc, char** argv)
 
 	for (int i = 1; i < model->nfaces(); i++) {
 		auto face = model->face(i);
+		std::vector<Vec2i> screen_coords(3);
+		std::vector<Vec3f> world_coords(3);
 		for (int j = 0; j < 3; j++) {
-			auto v0 = model->vert(face[j]);
-			auto v1 = model->vert(face[(j + 1) % 3]);
-			// transform v0 and v1 in [-1,-1]~[1,1] to [0,0]~[IMG_WIDTH,IMG_HEIGHT]
-			int x0 = (v0.x + 1.0) * IMG_WIDTH / 2.0;
-			int y0 = (v0.y + 1.0) * IMG_HEIGHT / 2.0;
-			int x1 = (v1.x + 1.0) * IMG_WIDTH / 2.0;
-			int y1 = (v1.y + 1.0) * IMG_HEIGHT / 2.0;
-			line(x0, y0, x1, y1, image, white);
+			world_coords[j] = model->vert(face[j]);
+			screen_coords[j] =
+				Vec2i((world_coords[j].x + 1.0) * IMG_WIDTH / 2.0
+					, (world_coords[j].y + 1.0) * IMG_HEIGHT / 2.0);
+		}
+		Vec3f n = (world_coords[2] - world_coords[0]) ^ (world_coords[1] - world_coords[0]);
+		n.normalize();
+		float intensity = (n * light_dir);
+		if (intensity > 0) {
+			std::vector<Vec2i> pts = { screen_coords[0], screen_coords[1], screen_coords[2] };
+			triangle(pts, image
+				, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
 		}
 	}
-
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
 	return 0;
