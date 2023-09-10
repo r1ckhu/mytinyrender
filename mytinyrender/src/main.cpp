@@ -64,15 +64,14 @@ void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color)
 	}
 }
 
-Vec3f world2screen(Vec3f v) {
+Vec3f world2screen(Vec4f v) {
 	// v.x and v.y should be in [-1,1]
-	Vec4f p = vec3f_to_vec4f(v);
 	static std::unique_ptr<Matrix> viewport_trans;
 	if (viewport_trans == nullptr) {
 		viewport_trans = std::make_unique<Matrix>();
 		cal_viewport_transform(IMG_WIDTH, IMG_HEIGHT, *viewport_trans);
 	}
-	return  vec4f_to_vec3f((*viewport_trans) * p);
+	return  vec4f_to_vec3f((*viewport_trans) * v);
 }
 
 Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
@@ -99,7 +98,7 @@ Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
 void triangle(std::vector<Vec3f>& pts, std::vector<Vec2i>& uv, TGAImage& image, float intensity) {
 	Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
 	Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-	Vec2f clamp = bboxmin;
+	Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
 	for (int i = 0; i < 3; i++) {
 		// the outer std::max and std::min ignore the bounding box outside the screen
 		bboxmin.x = std::max(0.f, std::min(bboxmin.x, pts[i].x));
@@ -147,7 +146,11 @@ int main(int argc, char** argv)
 		model = std::make_unique<Model>(DEFAULT_OBJ_PATH.c_str());
 	}
 	TGAImage image{ IMG_WIDTH,IMG_HEIGHT,TGAImage::RGB };
-	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::min());
+	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::lowest());
+
+	Matrix view;
+	cal_view_transform(camera_pos, look_at, up, view);
+
 
 	for (int i = 1; i < model->nfaces(); i++) {
 		auto face = model->face(i);
@@ -155,7 +158,8 @@ int main(int argc, char** argv)
 		std::vector<Vec3f> world_coords(3);
 		for (int j = 0; j < 3; j++) {
 			world_coords[j] = model->vert(face[j]);
-			screen_coords[j] = world2screen(model->vert(face[j]));
+			Vec4f v = vec3f_to_vec4f(world_coords[j], true);
+			screen_coords[j] = world2screen(view * v);
 		}
 		Vec3f n = cross((world_coords[2] - world_coords[0]), (world_coords[1] - world_coords[0]));
 		n.normalize();
