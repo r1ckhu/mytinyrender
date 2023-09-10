@@ -36,6 +36,14 @@ void cal_ortho_proj(float l, float r, float t, float b, float n, float f, Matrix
 	proj = scale * trans;
 }
 
+void cal_persp_proj(float n, float f, Matrix& proj)
+{
+	proj[0][0] = n; proj[0][1] = 0; proj[0][2] = 0; proj[0][3] = 0;
+	proj[1][0] = 0; proj[1][1] = n; proj[1][2] = 0; proj[1][3] = 0;
+	proj[2][0] = 0; proj[2][1] = 0; proj[2][2] = n + f; proj[2][3] = -n * f;
+	proj[3][0] = 0; proj[3][1] = 0; proj[3][2] = 1; proj[3][3] = 0;
+}
+
 void cal_viewport_transform(float width, float height, Matrix& viewport)
 {
 	// Transform in xy plane: [-1, 1]^2 to [0, width] x [0, height]

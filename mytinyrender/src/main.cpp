@@ -16,7 +16,7 @@ Vec3f light_dir = { 0,0,-1 };
 std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
 
-Vec3f camera_pos = { 0,0,5 };
+Vec3f camera_pos = { 0,0,3 };
 Vec3f look_at = { 0,0,-1 };
 Vec3f up = { 0,1,0 }; // prep to look_at
 
@@ -148,9 +148,10 @@ int main(int argc, char** argv)
 	TGAImage image{ IMG_WIDTH,IMG_HEIGHT,TGAImage::RGB };
 	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::lowest());
 
-	Matrix view;
+	Matrix view,ortho,persp;
 	cal_view_transform(camera_pos, look_at, up, view);
-
+	cal_persp_proj(-2, -4, persp);
+	cal_ortho_proj(-1, 1, 1, -1, -2, -4, ortho);
 
 	for (int i = 1; i < model->nfaces(); i++) {
 		auto face = model->face(i);
@@ -159,7 +160,12 @@ int main(int argc, char** argv)
 		for (int j = 0; j < 3; j++) {
 			world_coords[j] = model->vert(face[j]);
 			Vec4f v = vec3f_to_vec4f(world_coords[j], true);
-			screen_coords[j] = world2screen(view * v);
+			// for debug purpose
+			Vec4f after_view = view * v;
+			Vec4f after_persp = persp * after_view;
+			Vec4f after_ortho = ortho * after_persp;
+			after_ortho = after_ortho / after_ortho[3];
+			screen_coords[j] = world2screen(after_ortho);
 		}
 		Vec3f n = cross((world_coords[2] - world_coords[0]), (world_coords[1] - world_coords[0]));
 		n.normalize();
