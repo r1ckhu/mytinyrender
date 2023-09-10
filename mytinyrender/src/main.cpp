@@ -1,5 +1,6 @@
 ﻿#include "tgaimage.h"
 #include "model.h"
+#include "gl.h"
 #include <memory>
 #include <string>
 #include <algorithm>
@@ -14,6 +15,25 @@ const int IMG_HEIGHT = 1200;
 Vec3f light_dir = { 0,0,-1 };
 std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
+
+Vec3f camera_pos = { 0,0,5 };
+Vec3f look_at = { 0,0,-1 };
+Vec3f up = { 0,1,0 }; // prep to look_at
+
+Matrix view;
+
+Vec4f vec3f_to_vec4f(Vec3f v, bool is_point = true) {
+	Vec4f result;
+	result[0] = v.x;
+	result[1] = v.y;
+	result[2] = v.z;
+	result[3] = (is_point) ? 1 : 0;
+	return result;
+}
+
+Vec3f vec4f_to_vec3f(Vec4f v) {
+	return Vec3f{ v[0],v[1],v[2] };
+}
 
 void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color) {
 	// TODO: forget about optimization for now 
@@ -45,7 +65,14 @@ void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color)
 }
 
 Vec3f world2screen(Vec3f v) {
-	return Vec3f((v.x + 1.f) * IMG_WIDTH / 2.f, (v.y + 1.f) * IMG_HEIGHT / 2.f, v.z);
+	// v.x and v.y should be in [-1,1]
+	Vec4f p = vec3f_to_vec4f(v);
+	static std::unique_ptr<Matrix> viewport_trans;
+	if (viewport_trans == nullptr) {
+		viewport_trans = std::make_unique<Matrix>();
+		cal_viewport_transform(IMG_WIDTH, IMG_HEIGHT, *viewport_trans);
+	}
+	return  vec4f_to_vec3f((*viewport_trans) * p);
 }
 
 Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
