@@ -12,6 +12,7 @@ const std::string DEFAULT_OBJ_PATH = std::string("obj/african_head/african_head.
 const int IMG_WIDTH = 1200;
 const int IMG_HEIGHT = 1200;
 Vec3f light_dir = { 0,0,-1 };
+std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
 
 void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color) {
@@ -50,7 +51,7 @@ Vec3f world2screen(Vec3f v) {
 Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
 	Vec3f x{ (float)(pts[1] - pts[0]).x, (float)(pts[2] - pts[0]).x, (float)(pts[0] - p).x };
 	Vec3f y{ (float)(pts[1] - pts[0]).y, (float)(pts[2] - pts[0]).y, (float)(pts[0] - p).y };
-	Vec3f temp = cross(x,y); // result = k[u, v, 1];
+	Vec3f temp = cross(x, y); // result = k[u, v, 1];
 	if (std::abs(temp.z) < 1) { // which means temp.z is zero
 		// in this case the triangle is degenerate to a line
 		// we will assume the point p is not in the triangle
@@ -68,7 +69,7 @@ Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
 	return b;
 }
 
-void triangle(std::vector<Vec3f>& pts, TGAImage& image, TGAColor color) {
+void triangle(std::vector<Vec3f>& pts, std::vector<Vec2i>& uv, TGAImage& image, float intensity) {
 	Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
 	Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
 	Vec2f clamp = bboxmin;
@@ -94,7 +95,17 @@ void triangle(std::vector<Vec3f>& pts, TGAImage& image, TGAColor color) {
 			}
 			if ((*z_buffer)[int(p.x + p.y * IMG_WIDTH)] < p_z) {
 				(*z_buffer)[int(p.x + p.y * IMG_WIDTH)] = p_z;
-				image.set(p.x, p.y, color);
+				// interpolate the uv value
+				Vec2i uv_p = Vec2i(0, 0);
+				for (int i = 0; i < 3; i++) {
+					uv_p.x += uv[i].x * bc_screen[i];
+					uv_p.y += uv[i].y * bc_screen[i];
+				}
+				TGAColor texture_color = model->diffuse(uv_p);
+				texture_color.r *= intensity;
+				texture_color.g *= intensity;
+				texture_color.b *= intensity;
+				image.set(p.x, p.y, texture_color);
 			}
 		}
 	}
@@ -102,7 +113,6 @@ void triangle(std::vector<Vec3f>& pts, TGAImage& image, TGAColor color) {
 
 int main(int argc, char** argv)
 {
-	std::unique_ptr<Model> model;
 	if (argc == 2) {
 		model = std::make_unique<Model>(argv[1]);
 	}
@@ -124,8 +134,11 @@ int main(int argc, char** argv)
 		n.normalize();
 		float intensity = (n * light_dir);
 		if (intensity > 0) {
-			triangle(screen_coords, image
-				, TGAColor(intensity * 255, intensity * 255, intensity * 255, 255));
+			std::vector<Vec2i> uv(3);
+			for (int j = 0; j < 3; j++) {
+				uv[j] = model->uv(i, j);
+			}
+			triangle(screen_coords, uv, image, intensity);
 		}
 	}
 	image.flip_vertically();
