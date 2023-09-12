@@ -16,126 +16,32 @@ Vec3f light_dir = { 0,0,-1 };
 std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
 
-Vec3f camera_pos = { 0,0,3 };
-Vec3f look_at = { 0,0,-1 };
-Vec3f up = { 0,1,0 }; // prep to look_at
 
-Matrix view;
+struct gouraud_shader_t : shader_t
+{
+	Vec3f varying_intensity; // written by vertex shader, read by fragment shader
+	mat<2, 3, float> varying_uv;
 
-Vec4f vec3f_to_vec4f(Vec3f v, bool is_point = true) {
-	Vec4f result;
-	result[0] = v.x;
-	result[1] = v.y;
-	result[2] = v.z;
-	result[3] = (is_point) ? 1 : 0;
-	return result;
-}
-
-Vec3f vec4f_to_vec3f(Vec4f v) {
-	return Vec3f{ v[0],v[1],v[2] };
-}
-
-void line(int x0, int y0, int x1, int y1, TGAImage& image, const TGAColor color) {
-	// TODO: forget about optimization for now 
-	bool steep = false;
-	if (std::abs(x1 - x0) < std::abs(y1 - y0)) {
-		std::swap(x0, y0);
-		std::swap(x1, y1);
-		steep = true;
+	Vec4f vertex(int iface, int nthvert) final {
+		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
+		Vec3f v = model->vert(iface, nthvert);
+		Vec4f gl_vertex = vec3f_to_vec4f(v);
+		Vec4f after_view = view * gl_vertex;
+		Vec4f after_persp = persp * after_view;
+		Vec4f after_ortho = ortho * after_persp;
+		gl_vertex = viewport * projection * view * gl_vertex;
+		gl_vertex = gl_vertex / gl_vertex[3];
+		varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir * -1);
+		return gl_vertex;
 	}
-	if (x0 > x1) {
-		std::swap(x0, x1);
-		std::swap(y0, y1);
+	bool fragment(Vec3f bar, TGAColor& color) final {
+		float intensity = varying_intensity * bar;
+		Vec2f uv = varying_uv * bar;
+		color = model->diffuse(uv);
+		color = TGAColor(color.r * intensity, color.g * intensity, color.b * intensity, 255);
+		return false;                              // no, we do not discard this pixel
 	}
-	for (int x = x0; x <= x1; x++) {
-		if (x1 - x0 == 0) {
-			image.set(x, y0, color);
-			continue;
-		}
-		float t = (x - x0) / (float)(x1 - x0);
-		// if use "y0 * (1. - t) + y1 * t" will have problem with float
-		int y = y0 + (y1 - y0) * t;
-		if (steep) {
-			image.set(y, x, color);
-		}
-		else {
-			image.set(x, y, color);
-		}
-	}
-}
-
-Vec3f world2screen(Vec4f v) {
-	// v.x and v.y should be in [-1,1]
-	static std::unique_ptr<Matrix> viewport_trans;
-	if (viewport_trans == nullptr) {
-		viewport_trans = std::make_unique<Matrix>();
-		cal_viewport_transform(IMG_WIDTH, IMG_HEIGHT, *viewport_trans);
-	}
-	return  vec4f_to_vec3f((*viewport_trans) * v);
-}
-
-Vec3f barycentric(std::vector<Vec3f>& pts, Vec3f p) {
-	Vec3f x{ (float)(pts[1] - pts[0]).x, (float)(pts[2] - pts[0]).x, (float)(pts[0] - p).x };
-	Vec3f y{ (float)(pts[1] - pts[0]).y, (float)(pts[2] - pts[0]).y, (float)(pts[0] - p).y };
-	Vec3f temp = cross(x, y); // result = k[u, v, 1];
-	if (std::abs(temp.z) < 1) { // which means temp.z is zero
-		// in this case the triangle is degenerate to a line
-		// we will assume the point p is not in the triangle
-		// so return any Vec3f that has a negative value in it
-		return Vec3f(-1, 1, 1);
-	}
-	// the return value should be [1-u-v, u, v]
-	float u = temp.x / temp.z;
-	float v = temp.y / temp.z;
-	Vec3f a = Vec3f{ 1.f - u - v,u,v };
-	Vec3f b = Vec3f(1.f - (temp.x + temp.y) / temp.z, temp.x / temp.z, temp.y / temp.z);
-	// theoretically a and b should be the same, however in some cases there will be a difference
-	// between a value that is close to zero(but it is negative) and a value that is zero
-	// which will create holes when filling the triangle
-	return b;
-}
-
-void triangle(std::vector<Vec3f>& pts, std::vector<Vec2i>& uv, TGAImage& image, float intensity) {
-	Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
-	Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
-	Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
-	for (int i = 0; i < 3; i++) {
-		// the outer std::max and std::min ignore the bounding box outside the screen
-		bboxmin.x = std::max(0.f, std::min(bboxmin.x, pts[i].x));
-		bboxmin.y = std::max(0.f, std::min(bboxmin.y, pts[i].y));
-
-		bboxmax.x = std::min(clamp.x, std::max(bboxmax.x, pts[i].x));
-		bboxmax.y = std::min(clamp.y, std::max(bboxmax.y, pts[i].y));
-	}
-	Vec2i p;
-	for (p.x = bboxmin.x; p.x <= bboxmax.x; p.x++) {
-		for (p.y = bboxmin.y; p.y <= bboxmax.y; p.y++) {
-			Vec3f bc_screen = barycentric(pts, Vec3f(p.x, p.y, 0));
-			if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0) {
-				continue;
-			}
-			float p_z = 0.f;
-			// interpolate the z value
-			for (int i = 0; i < 3; i++) {
-				p_z += pts[i].z * bc_screen[i];
-			}
-			if ((*z_buffer)[int(p.x + p.y * IMG_WIDTH)] < p_z) {
-				(*z_buffer)[int(p.x + p.y * IMG_WIDTH)] = p_z;
-				// interpolate the uv value
-				Vec2i uv_p = Vec2i(0, 0);
-				for (int i = 0; i < 3; i++) {
-					uv_p.x += uv[i].x * bc_screen[i];
-					uv_p.y += uv[i].y * bc_screen[i];
-				}
-				TGAColor texture_color = model->diffuse(uv_p);
-				texture_color.r *= intensity;
-				texture_color.g *= intensity;
-				texture_color.b *= intensity;
-				image.set(p.x, p.y, texture_color);
-			}
-		}
-	}
-}
+};
 
 int main(int argc, char** argv)
 {
@@ -148,37 +54,24 @@ int main(int argc, char** argv)
 	TGAImage image{ IMG_WIDTH,IMG_HEIGHT,TGAImage::RGB };
 	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::lowest());
 
-	Matrix view,ortho,persp;
-	cal_view_transform(camera_pos, look_at, up, view);
-	cal_persp_proj(-2, -4, persp);
-	cal_ortho_proj(-1, 1, 1, -1, -2, -4, ortho);
+	Vec3f camera_pos = { 0,0,3 };
+	Vec3f look_at = { 0,0,-1 };
+	Vec3f up = { 0,1,0 }; // prep to look_at
+	Vec2f nf = { -2,-4 };
+	float fovY_deg = 53.13;
 
+	init_camera(camera_pos, look_at, up, fovY_deg, nf, Vec2f{ 1, 1 }, Vec2i{ IMG_WIDTH, IMG_HEIGHT }, true);
+
+	gouraud_shader_t flat_shader;
 	for (int i = 1; i < model->nfaces(); i++) {
-		auto face = model->face(i);
-		std::vector<Vec3f> screen_coords(3);
-		std::vector<Vec3f> world_coords(3);
+		std::vector<Vec4f> screen_coords(3);
 		for (int j = 0; j < 3; j++) {
-			world_coords[j] = model->vert(face[j]);
-			Vec4f v = vec3f_to_vec4f(world_coords[j], true);
-			// for debug purpose
-			Vec4f after_view = view * v;
-			Vec4f after_persp = persp * after_view;
-			Vec4f after_ortho = ortho * after_persp;
-			after_ortho = after_ortho / after_ortho[3];
-			screen_coords[j] = world2screen(after_ortho);
+			screen_coords[j] = flat_shader.vertex(i, j);
 		}
-		Vec3f n = cross((world_coords[2] - world_coords[0]), (world_coords[1] - world_coords[0]));
-		n.normalize();
-		float intensity = (n * light_dir);
-		if (intensity > 0) {
-			std::vector<Vec2i> uv(3);
-			for (int j = 0; j < 3; j++) {
-				uv[j] = model->uv(i, j);
-			}
-			triangle(screen_coords, uv, image, intensity);
-		}
+		triangle(screen_coords, flat_shader, *z_buffer, image);
 	}
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
+
 	return 0;
 }
