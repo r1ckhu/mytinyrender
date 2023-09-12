@@ -16,7 +16,6 @@ Vec3f light_dir = { 0,0,-1 };
 std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
 
-
 struct gouraud_shader_t : shader_t
 {
 	Vec3f varying_intensity; // written by vertex shader, read by fragment shader
@@ -52,9 +51,6 @@ struct toon_shader_t : shader_t
 		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
 		Vec3f v = model->vert(iface, nthvert);
 		Vec4f gl_vertex = vec3f_to_vec4f(v);
-		Vec4f after_view = view * gl_vertex;
-		Vec4f after_persp = persp * after_view;
-		Vec4f after_ortho = ortho * after_persp;
 		gl_vertex = viewport * projection * view * gl_vertex;
 		gl_vertex = gl_vertex / gl_vertex[3];
 		varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir * -1);
@@ -70,6 +66,29 @@ struct toon_shader_t : shader_t
 		else intensity = 0;
 		color = TGAColor(255, 155, 0) * intensity;
 		return false;
+	}
+};
+
+struct normal_mapping_shader_t : shader_t
+{
+	mat<2, 3, float> varying_uv;
+	mat<4, 4, float> uniform_M;   //  Projection*View
+	mat<4, 4, float> uniform_MIT; // (Projection*View).invert_transpose()
+
+	Vec4f vertex(int iface, int nthvert) final {
+		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
+		Vec4f gl_vertex = vec3f_to_vec4f(model->vert(iface, nthvert));
+		gl_vertex = viewport * projection * view * gl_vertex;
+		gl_vertex = gl_vertex / gl_vertex[3];
+		return gl_vertex;
+	}
+	bool fragment(Vec3f bar, TGAColor& color) final {
+		Vec2f uv = varying_uv * bar;
+		Vec3f n = vec4f_to_vec3f(uniform_MIT * vec3f_to_vec4f(model->normal(uv))).normalize();
+		Vec3f l = vec4f_to_vec3f(uniform_M * vec3f_to_vec4f(light_dir)).normalize();
+		float intensity = std::max(0.f, n * l * -1);
+		color = model->diffuse(uv) * intensity;
+		return false;                              // no, we do not discard this pixel
 	}
 };
 
@@ -92,7 +111,9 @@ int main(int argc, char** argv)
 
 	init_camera(camera_pos, look_at, up, fovY_deg, nf, Vec2f{ 1, 1 }, Vec2i{ IMG_WIDTH, IMG_HEIGHT }, true);
 
-	gouraud_shader_t shader;
+	normal_mapping_shader_t shader;
+	shader.uniform_M = projection * view;
+	shader.uniform_MIT = shader.uniform_M.invert_transpose();
 	// toon_shader_t shader;
 	for (int i = 1; i < model->nfaces(); i++) {
 		std::vector<Vec4f> screen_coords(3);
