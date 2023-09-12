@@ -43,6 +43,36 @@ struct gouraud_shader_t : shader_t
 	}
 };
 
+struct toon_shader_t : shader_t
+{
+	Vec3f varying_intensity; // written by vertex shader, read by fragment shader
+	mat<2, 3, float> varying_uv;
+
+	Vec4f vertex(int iface, int nthvert) final {
+		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
+		Vec3f v = model->vert(iface, nthvert);
+		Vec4f gl_vertex = vec3f_to_vec4f(v);
+		Vec4f after_view = view * gl_vertex;
+		Vec4f after_persp = persp * after_view;
+		Vec4f after_ortho = ortho * after_persp;
+		gl_vertex = viewport * projection * view * gl_vertex;
+		gl_vertex = gl_vertex / gl_vertex[3];
+		varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir * -1);
+		return gl_vertex;
+	}
+	bool fragment(Vec3f bar, TGAColor& color) final {
+		float intensity = varying_intensity * bar;
+		if (intensity > .85) intensity = 1;
+		else if (intensity > .60) intensity = .80;
+		else if (intensity > .45) intensity = .60;
+		else if (intensity > .30) intensity = .45;
+		else if (intensity > .15) intensity = .30;
+		else intensity = 0;
+		color = TGAColor(255, 155, 0) * intensity;
+		return false;
+	}
+};
+
 int main(int argc, char** argv)
 {
 	if (argc == 2) {
@@ -57,18 +87,19 @@ int main(int argc, char** argv)
 	Vec3f camera_pos = { 0,0,3 };
 	Vec3f look_at = { 0,0,-1 };
 	Vec3f up = { 0,1,0 }; // prep to look_at
-	Vec2f nf = { -2,-4 };
-	float fovY_deg = 53.13;
+	Vec2f nf = { -2.5,-4 };
+	float fovY_deg = 45;
 
 	init_camera(camera_pos, look_at, up, fovY_deg, nf, Vec2f{ 1, 1 }, Vec2i{ IMG_WIDTH, IMG_HEIGHT }, true);
 
-	gouraud_shader_t flat_shader;
+	gouraud_shader_t shader;
+	// toon_shader_t shader;
 	for (int i = 1; i < model->nfaces(); i++) {
 		std::vector<Vec4f> screen_coords(3);
 		for (int j = 0; j < 3; j++) {
-			screen_coords[j] = flat_shader.vertex(i, j);
+			screen_coords[j] = shader.vertex(i, j);
 		}
-		triangle(screen_coords, flat_shader, *z_buffer, image);
+		triangle(screen_coords, shader, *z_buffer, image);
 	}
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
