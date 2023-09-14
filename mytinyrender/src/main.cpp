@@ -9,18 +9,18 @@ const TGAColor white = TGAColor{ 255, 255, 255, 255 };
 const TGAColor red = TGAColor{ 255,0,0,255 };
 const TGAColor green = TGAColor{ 0,255,0,255 };
 const TGAColor blue = TGAColor{ 0,0,255,255 };
-const std::string DEFAULT_OBJ_PATH = std::string("obj/african_head/african_head.obj");
+const std::string DEFAULT_OBJ_PATH = std::string("obj/floor.obj");
 const int IMG_WIDTH = 1200;
 const int IMG_HEIGHT = 1200;
 std::unique_ptr<Model> model;
 std::unique_ptr<std::vector<float>> z_buffer;
 
-Vec3f light_dir = { -1,-1,-1 };
-Vec3f camera_pos = { 0,0,3 };
-Vec3f look_at = { 0,0,-1 };
-Vec3f up = { 0,1,0 }; // prep to look_at
-Vec2f nf = { -2.5,-4 };
-float fovY_deg = 45;
+Vec3f light_dir = { 0,-1,0};
+Vec3f camera_pos = { 0,5,5 };
+Vec3f look_at = { 0,-1,-1 };
+Vec3f up = { 0,1,-1 }; // prep to look_at
+Vec2f nf = { -1,-10 };
+float fovY_deg = 50;
 
 struct gouraud_shader_t : shader_t
 {
@@ -116,7 +116,7 @@ struct phone_shader_t : shader_t
 		Vec3f n = vec4f_to_vec3f(uniform_MIT * vec3f_to_vec4f(model->normal(uv))).normalize();
 		Vec3f l = vec4f_to_vec3f(uniform_M * vec3f_to_vec4f(light_dir)).normalize();
 		Vec3f h = vec4f_to_vec3f(uniform_M * vec3f_to_vec4f((light_dir + look_at) * -1)).normalize();
-		float specular = std::pow(std::max(0.f, n * h),model->specular(uv));
+		float specular = std::pow(std::max(0.f, n * h), model->specular(uv));
 		float diffuse = std::max(0.f, n * l * -1);
 		color = model->diffuse(uv);
 		for (int i = 0; i < 3; i++) {
@@ -136,14 +136,14 @@ int main(int argc, char** argv)
 	}
 	TGAImage image{ IMG_WIDTH,IMG_HEIGHT,TGAImage::RGB };
 	z_buffer = std::make_unique<std::vector<float>>(IMG_WIDTH * IMG_HEIGHT, std::numeric_limits<float>::lowest());
-
+	debug_log.open("log.txt");
 	init_camera(camera_pos, look_at, up, fovY_deg, nf, Vec2f{ 1, 1 }, Vec2i{ IMG_WIDTH, IMG_HEIGHT }, true);
 
 	phone_shader_t shader;
 	shader.uniform_M = projection * view;
 	shader.uniform_MIT = shader.uniform_M.invert_transpose();
 	// toon_shader_t shader;
-	for (int i = 1; i < model->nfaces(); i++) {
+	for (int i = 0; i < model->nfaces(); i++) {
 		std::vector<Vec4f> screen_coords(3);
 		for (int j = 0; j < 3; j++) {
 			screen_coords[j] = shader.vertex(i, j);
@@ -152,6 +152,6 @@ int main(int argc, char** argv)
 	}
 	image.flip_vertically();
 	image.write_tga_file("output.tga");
-
+	debug_log.close();
 	return 0;
 }

@@ -87,7 +87,7 @@ void triangle(std::vector<Vec4f>& pts, shader_t& shader, std::vector<float>& z_b
 	for (p.x = bboxmin.x; p.x <= bboxmax.x; p.x++) {
 		for (p.y = bboxmin.y; p.y <= bboxmax.y; p.y++) {
 			Vec4f pf; pf[0] = p.x; pf[1] = p.y; pf[2] = 1; pf[3] = 1;
-			if (p.x == 555 && p.y == 935) {
+			if (p.x == 643 && p.y == 702) {
 				int debug = 1;
 			}
 			Vec3f bc_screen = barycentric(pts, pf);
@@ -100,6 +100,7 @@ void triangle(std::vector<Vec4f>& pts, shader_t& shader, std::vector<float>& z_b
 			//	p_z += pts[i][2] * bc_screen[i];
 			//}
 			p_z = Vec3f(pts[0][2], pts[1][2], pts[2][2]) * bc_screen;
+			debug_log << p.x << ' ' << p.y << ' ' << p_z << std::endl;
 			if (z_buffer[int(p.x + p.y * image.get_width())] < p_z) {
 				z_buffer[int(p.x + p.y * image.get_width())] = p_z;
 				bool discard = shader.fragment(bc_screen, color);
