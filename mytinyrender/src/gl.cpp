@@ -70,10 +70,16 @@ Vec3f barycentric(std::vector<Vec4f>& pts, Vec4f p) {
 	return b;
 }
 
-void triangle(std::vector<Vec4f>& pts, shader_t& shader, std::vector<float>& z_buffer, TGAImage& image) {
+void triangle(std::vector<Vec4f>& clipc, shader_t& shader, std::vector<float>& z_buffer, TGAImage& image) {
 	Vec2f bboxmin(std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
 	Vec2f bboxmax(-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max());
 	Vec2f clamp(image.get_width() - 1, image.get_height() - 1);
+
+	std::vector<Vec4f> pts = clipc;
+	for (int i = 0; i < 3; i++) {
+		pts[i] = pts[i] / pts[i][3];
+	}
+
 	for (int i = 0; i < 3; i++) {
 		// the outer std::max and std::min ignore the bounding box outside the screen
 		bboxmin.x = std::max(0.f, std::min(bboxmin.x, pts[i][0]));
@@ -87,23 +93,22 @@ void triangle(std::vector<Vec4f>& pts, shader_t& shader, std::vector<float>& z_b
 	for (p.x = bboxmin.x; p.x <= bboxmax.x; p.x++) {
 		for (p.y = bboxmin.y; p.y <= bboxmax.y; p.y++) {
 			Vec4f pf; pf[0] = p.x; pf[1] = p.y; pf[2] = 1; pf[3] = 1;
-			if (p.x == 643 && p.y == 702) {
-				int debug = 1;
-			}
 			Vec3f bc_screen = barycentric(pts, pf);
+
+			Vec3f bc_clip = Vec3f(bc_screen.x / clipc[0][3], bc_screen.y / clipc[1][3], bc_screen.z / clipc[2][3]);
+			bc_clip = bc_clip / (bc_clip.x + bc_clip.y + bc_clip.z);
+			
 			if (bc_screen.x < 0 || bc_screen.y < 0 || bc_screen.z < 0) {
 				continue;
 			}
 			float p_z = 0.f;
 			// interpolate the z value
-			//for (int i = 0; i < 3; i++) {
-			//	p_z += pts[i][2] * bc_screen[i];
-			//}
-			p_z = Vec3f(pts[0][2], pts[1][2], pts[2][2]) * bc_screen;
+			p_z = Vec3f(pts[0][2], pts[1][2], pts[2][2]) * bc_clip;
+			
 			debug_log << p.x << ' ' << p.y << ' ' << p_z << std::endl;
 			if (z_buffer[int(p.x + p.y * image.get_width())] < p_z) {
 				z_buffer[int(p.x + p.y * image.get_width())] = p_z;
-				bool discard = shader.fragment(bc_screen, color);
+				bool discard = shader.fragment(bc_clip, color);
 				if (!discard) {
 					image.set(p.x, p.y, color);
 				}

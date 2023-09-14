@@ -35,7 +35,7 @@ struct gouraud_shader_t : shader_t
 		Vec4f after_persp = persp * after_view;
 		Vec4f after_ortho = ortho * after_persp;
 		gl_vertex = viewport * projection * view * gl_vertex;
-		gl_vertex = gl_vertex / gl_vertex[3];
+		// do not divide gl_vertex[3] here, delay it to triangle()
 		varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir * -1);
 		return gl_vertex;
 	}
@@ -58,7 +58,7 @@ struct toon_shader_t : shader_t
 		Vec3f v = model->vert(iface, nthvert);
 		Vec4f gl_vertex = vec3f_to_vec4f(v);
 		gl_vertex = viewport * projection * view * gl_vertex;
-		gl_vertex = gl_vertex / gl_vertex[3];
+		// do not divide gl_vertex[3] here, delay it to triangle()
 		varying_intensity[nthvert] = std::max(0.f, model->normal(iface, nthvert) * light_dir * -1);
 		return gl_vertex;
 	}
@@ -85,7 +85,7 @@ struct normal_mapping_shader_t : shader_t
 		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
 		Vec4f gl_vertex = vec3f_to_vec4f(model->vert(iface, nthvert));
 		gl_vertex = viewport * projection * view * gl_vertex;
-		gl_vertex = gl_vertex / gl_vertex[3];
+		// do not divide gl_vertex[3] here, delay it to triangle()
 		return gl_vertex;
 	}
 	bool fragment(Vec3f bar, TGAColor& color) final {
@@ -108,7 +108,7 @@ struct phone_shader_t : shader_t
 		varying_uv.set_col(nthvert, model->uv(iface, nthvert));
 		Vec4f gl_vertex = vec3f_to_vec4f(model->vert(iface, nthvert));
 		gl_vertex = viewport * projection * view * gl_vertex;
-		gl_vertex = gl_vertex / gl_vertex[3];
+		// do not divide gl_vertex[3] here, delay it to triangle()
 		return gl_vertex;
 	}
 	bool fragment(Vec3f bar, TGAColor& color) final {
