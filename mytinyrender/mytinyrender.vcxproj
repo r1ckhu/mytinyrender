@@ -24,6 +24,7 @@
     <ProjectGuid>{4232ae8a-15ab-457a-9e5e-1a4c54e4592d}</ProjectGuid>
     <RootNamespace>mytinyrender</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>mytinyrenderer</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'" Label="Configuration">
