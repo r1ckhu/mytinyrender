@@ -105,7 +105,7 @@ void triangle(std::vector<Vec4f>& clipc, shader_t& shader, std::vector<float>& z
 			// interpolate the z value
 			p_z = Vec3f(pts[0][2], pts[1][2], pts[2][2]) * bc_clip;
 			
-			debug_log << p.x << ' ' << p.y << ' ' << p_z << std::endl;
+			// debug_log << p.x << ' ' << p.y << ' ' << p_z << std::endl;
 			if (z_buffer[int(p.x + p.y * image.get_width())] < p_z) {
 				z_buffer[int(p.x + p.y * image.get_width())] = p_z;
 				bool discard = shader.fragment(bc_clip, color);
